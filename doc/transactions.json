@@ -1,0 +1,75 @@
+{signal: [
+  {name: 'clk', wave: 'p....|...'},
+    {name: 'req', wave: '0.1..|0x.'},
+  {name: 'addr', wave: 'x.2..|x.x', data: ['0x100']},
+  {name: 'mode', wave: 'x.2..|x..', data: ['WR']},
+  {name: 'burstcnt', wave: 'x.2..|xx.', data: ['1']},
+  {name: 'be', wave: 'x.2..|x..', data: ['0xbeef...1234', 'body', 'tail', 'data']},
+  {name: 'wdata', wave: 'x.2..|x..', data: ['0xf0f...0', 'body', 'tail', 'data']},
+  {},
+  {name: 'ack', wave: '0....|10.'},
+  {name: 'done', wave: '0....|10.'},
+  {name: 'rdata', wave: 'x........', data: ['head', 'body', 'tail', 'data']}
+  ]
+}
+
+{signal: [
+  {name: 'clk', wave: 'p....|...'},
+    {name: 'req', wave: '0.1..|0x.'},
+  {name: 'addr', wave: 'x.2..|x.x', data: ['0x100']},
+  {name: 'mode', wave: 'x.2..|x..', data: ['RD']},
+  {name: 'burstcnt', wave: 'x.2..|xx.', data: ['1']},
+  {name: 'be', wave: 'x....|x..', data: ['0xbeef...1234', 'body', 'tail', 'data']},
+  {name: 'wdata', wave: 'x....|x..', data: ['0xf0f...0', 'body', 'tail', 'data']},
+  {},
+  {name: 'ack', wave: '0....|10.'},
+  {name: 'done', wave: '0....|10.'},
+  {name: 'rdata', wave: 'x.....2x.', data: ['0xbeef...1234', 'body', 'tail', 'data']}
+  ]
+}
+
+{signal: [
+  {name: 'clk', wave: 'p....|.......'},
+    {name: 'req', wave: '0.1..|0x|....'},
+  {name: 'addr', wave: 'x.2..|x.|....', data: ['0x100']},
+  {name: 'mode', wave: 'x.2..|x.|....', data: ['RD']},
+  {name: 'burstcnt', wave: 'x.2..|xx|....', data: ['4']},
+  {name: 'be', wave: 'x....|x.|....', data: ['0xbeef...1234', 'body', 'tail', 'data']},
+  {name: 'wdata', wave: 'x....|x.|....', data: ['0xf0f...0', 'body', 'tail', 'data']},
+  {},
+  {name: 'ack', wave: '0....|10|1..0'},
+  {name: 'done', wave: '0....|..|..10'},
+  {name: 'rdata', wave: 'x.....2x|345x', data: ['A', 'B', 'C', 'D']}
+  ]
+}
+
+{signal: [
+  {name: 'clk', wave: 'p....|.......'},
+    {name: 'req', wave: '0.1..|..|...x'},
+  {name: 'addr', wave: 'x.2..|x.|....', data: ['0x100']},
+  {name: 'mode', wave: 'x.2..|x.|....', data: ['WR']},
+  {name: 'burstcnt', wave: 'x.2..|xx|....', data: ['4']},
+  {name: 'be', wave: 'x.2..|.2|.22x', data: ['A', 'B', 'C', 'D']},
+  {name: 'wdata', wave: 'x.2..|.2|.22x', data: ['A', 'B', 'C', 'D']},
+  {},
+  {name: 'ack', wave: '0....|10|1..0'},
+  {name: 'done', wave: '0....|..|..10'},
+  {name: 'rdata', wave: 'x.......|....', data: ['A', 'B', 'C', 'D']}
+  ]
+}
+
+{signal: [
+  {name: 'clk', wave: 'p....|.........'},
+    {name: 'req', wave: '0.1..|..01|...x'},
+  {name: 'addr', wave: 'x.2..|x...|....', data: ['0x100']},
+  {name: 'mode', wave: 'x.2..|x...|....', data: ['WR']},
+  {name: 'burstcnt', wave: 'x.2..|x..x|....', data: ['4']},
+  {name: 'be', wave: 'x.2..|.2x2|.22x', data: ['A', 'B', 'B', 'C', 'D']},
+  {name: 'wdata', wave: 'x.2..|.2x2|.22x', data: ['A', 'B', 'B', 'C', 'D']},
+  {},
+  {name: 'ack', wave: '0....|10..|1..0'},
+  {name: 'done', wave: '0....|..|....10'},
+  {name: 'rdata', wave: 'x.......|......', data: ['A', 'B', 'C', 'D']}
+  ]
+}
+
