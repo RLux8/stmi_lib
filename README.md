@@ -39,7 +39,7 @@ Note that the request signal may be lowered during the transaction after the tra
 
 ![single_read](doc/stmi_burst_write_no_master_pause.svg)
 
-An exemmplary burst read transfer in which masked bus words are written to byte addresses 0x100, 0x120, 0x140 and 0x160.
+An exemplary burst read transfer in which masked bus words are written to byte addresses 0x100, 0x120, 0x140 and 0x160.
 Those words are acknoledged by the ack signal and the transfer completion is signalled by the done signal.
 
 ![single_read](doc/stmi_burst_write_master_pause.svg)
