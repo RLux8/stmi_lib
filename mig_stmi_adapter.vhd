@@ -26,16 +26,12 @@ use ieee.numeric_std.all;
 library stmi_lib;
 use stmi_lib.stmi.all;
 
-LIBRARY rv64i_lib;
-USE rv64i_lib.interface.ALL;
-USE rv64i_lib.isa.ALL;
-
 
 entity mig_stmi_adapter is
     PORT(
         -- fast memory uif clock
-        ui_clk              : IN     single;
-        ui_clk_sync_rst     : IN     single;
+        ui_clk              : IN    std_logic;
+        ui_clk_sync_rst     : IN    std_logic;
 
         stmi_req            : IN     stmi_req_T;
         stmi_ans            : OUT    stmi_ans_T;
@@ -60,7 +56,7 @@ entity mig_stmi_adapter is
 end mig_stmi_adapter;
 
 architecture behav of mig_stmi_adapter is
-    type fast_if_state_T is (idle, READING, WRITING, WRITING_HOLD, WAITING_REPEAT, WAITING_RELEASE, STARTUP, CLEARING, ACK, WAITS);
+    type fast_if_state_T is (idle, READING, WRITING, STARTUP, CLEARING, ACK, WAITS);
     signal fast_if_state: fast_if_state_T;
     signal next_fast_if_state: fast_if_state_T;
 
@@ -74,16 +70,15 @@ architecture behav of mig_stmi_adapter is
     signal clear_counter: std_logic_vector(app_addr'range);
 
     signal stmi_res_n: std_logic;
-    signal held_app_rd_data: std_logic_vector(app_rd_data'range);
 
     subtype UI_CMD_T is std_logic_vector(2 downto 0);
     constant WR_CMD: UI_CMD_T := "000";
     constant RD_CMD: UI_CMD_T := "001";
 
-    signal burst_end_address: word;
-    signal burst_current_address: word;
+    signal burst_end_address: stmi_addr_T;
+    signal burst_current_address: stmi_addr_T;
 
-    signal read_words: natural range 2 ** B_CNT_W downto 1;
+    signal handled_words: natural range 2 ** B_CNT_W downto 0;
 
     signal fast_active: boolean;
 begin
@@ -94,12 +89,11 @@ begin
     begin
         if stmi_res_n = '0' then
             fast_if_state <= STARTUP;
-            held_app_rd_data <= (others => '0');
             clear_counter <= (others => '0');
             fast_active <= false;
             burst_end_address <= (others => '0');
             burst_current_address <= (others => '0');
-            read_words <= 1;
+            handled_words <= 1;
         else
             if ui_clk'event and ui_clk = '1' then   
                 case fast_if_state is
@@ -129,13 +123,23 @@ begin
                     when idle =>
                         if stmi_req.req and fast_active then  
                             if stmi_req.mode = WR_MODE then
-                                if app_rdy = '1' and app_wdf_rdy = '1' then
-                                    fast_if_state <= ACK;
-                                elsif app_rdy = '1' then
-                                    fast_if_state <= WRITING_HOLD;
+                                fast_if_state <= WRITING;
+
+                                if app_rdy = '1' then
+                                    burst_current_address <= std_logic_vector(unsigned(stmi_req.addr) + 32);
+
+                                    if app_wdf_rdy = '1' then
+                                        if to_integer(unsigned(stmi_req.burstcnt)) = 1 then
+                                            fast_if_state <= ACK;
+                                        end if;
+                                        
+                                        handled_words <= 1;
+                                    else
+                                        handled_words <= 0;
+                                    end if;
                                 else
-                                    fast_if_state <= WRITING;
-                                end if; 
+                                    burst_current_address <= stmi_req.addr;
+                                end if;
                             else
                                 if app_rdy = '1' then
                                     burst_current_address <= std_logic_vector(unsigned(stmi_req.addr) + 32);
@@ -144,13 +148,13 @@ begin
                                 end if; 
 
                                 fast_if_state <= READING;
-                                read_words <= 1;
+                                handled_words <= 1;
                                 burst_end_address(burst_end_address'high downto 5) <= std_logic_vector(unsigned(stmi_req.addr(burst_end_address'high downto 5)) + unsigned(stmi_req.burstcnt));
                             end if;
                         end if;
 
                     when READING => 
-                        if app_rd_data_valid = '1' and read_words = to_integer(unsigned(stmi_req.burstcnt)) then
+                        if app_rd_data_valid = '1' and handled_words = to_integer(unsigned(stmi_req.burstcnt)) then
                             fast_if_state <= WAITS;
                         end if;
 
@@ -159,71 +163,60 @@ begin
                         end if;
 
                         if app_rd_data_valid = '1' then
-                            read_words <= read_words + 1;
+                            handled_words <= handled_words + 1;
                         end if;
 
                     when WRITING => 
-                        if app_rdy = '1' and app_wdf_rdy = '1' then
-                            fast_if_state <= ACK;
-                        elsif app_rdy = '1' then
-                            fast_if_state <= WRITING_HOLD;
-                        end if;
-                    
-                    when WRITING_HOLD => 
-                        if app_wdf_rdy = '1' then
-                            fast_if_state <= ACK;
-                        end if;
-                        
-                    when WAITING_REPEAT => 
-                        if app_rdy = '1' then
+                        if app_wdf_rdy = '1' and handled_words = to_integer(unsigned(stmi_req.burstcnt)) then
                             fast_if_state <= WAITS;
+                        end if;
+
+                        if app_rdy = '1' and burst_current_address /= burst_end_address then
+                            burst_current_address <= std_logic_vector(unsigned(burst_current_address) + 32);
+                        end if;
+
+                        if app_wdf_rdy = '1' then
+                            handled_words <= handled_words + 1;
                         end if;
                     
                     when ACK =>
                          fast_if_state <= WAITS;
                          
-                    when WAITING_RELEASE => 
-                        --if not stmi_req.req  then
-                            fast_if_state <= WAITING_REPEAT;
-                        --end if;
                     when WAITS => 
                         fast_if_state <= idle;
                     
                 end case;           
 
-                if app_rd_data_valid = '1' then
-                    held_app_rd_data <= app_rd_data;
-                end if;
-                
                 fast_active <= true;
             end if;
         end if;
     end process mig_if_state_p;
 
    
-    --stmi_ans.rdata <= app_rd_data when app_rd_data_valid = '1' else held_app_rd_data;
-    stmi_ans.rdata <= app_rd_data;
+    
 
     mig_if_output_p: process(all) is
         variable output_req: boolean;
     begin
-        stmi_ans.ack        <= false;
-        stmi_ans.done        <= false;
-        app_addr        <= (others => '0');
-        app_addr(26 downto 3)       <= stmi_req.addr(28 downto 5);
-        app_cmd         <= RD_CMD;
-        app_en          <= '0';
+        stmi_ans.ack            <= false;
+        stmi_ans.done           <= false;
+        stmi_ans.rdata          <= app_rd_data;
 
-        app_wdf_end     <= '0'; 
-        app_wdf_wren    <= '0';    
-        app_wdf_end     <= '0';
-        app_wdf_data    <= stmi_req.wdata;
-        app_wdf_mask    <= (others => '0');
+        app_addr                <= (others => '0');
+        app_addr(26 downto 3)   <= stmi_req.addr(28 downto 5);
+        app_cmd                 <= RD_CMD;
+        app_en                  <= '0';
+
+        app_wdf_end             <= '0'; 
+        app_wdf_wren            <= '0';    
+        app_wdf_end             <= '0';
+        app_wdf_data            <= stmi_req.wdata;
+        app_wdf_mask            <= (others => '0');
         
 
-        --for i in stmi_req.be'range loop
-        --    app_wdf_mask(i) <= not stmi_req.be(i);
-        --end loop;
+        -- for i in stmi_req.be'range loop
+        --     app_wdf_mask(i) <= not stmi_req.be(i);
+        -- end loop;
 
         case fast_if_state is
             when STARTUP => 
@@ -260,9 +253,10 @@ begin
                     app_en <= '1';
                     if stmi_req.mode = WR_MODE then
                         app_cmd <= WR_CMD;
-                        if app_wdf_rdy = '1' and app_rdy = '1' and stmi_req.req then
+                        if app_wdf_rdy = '1' and app_rdy = '1' then
                             app_wdf_wren <= '1';
-                            app_wdf_end  <= '1';
+                            app_wdf_end  <= '1' when to_integer(unsigned(stmi_req.burstcnt)) = 1 else
+                                            '0';
                         end if;
                     else
                         app_cmd <= RD_CMD;
@@ -270,24 +264,23 @@ begin
                 end if;
 
             when WRITING => 
+                stmi_ans.ack <= app_wdf_rdy = '1';
+                stmi_ans.done <= app_wdf_rdy = '1' and handled_words = to_integer(unsigned(stmi_req.burstcnt));
 
                 app_cmd <= WR_CMD;
-                app_en <= '1';
-                if app_rdy = '1' then
-                    app_wdf_wren <= '1';
-                    app_wdf_end  <= '1';
-                end if;
+                app_en <= '1' when burst_current_address /= burst_end_address else 
+                          '0';
 
-            when WRITING_HOLD => 
+                app_wdf_wren <= '1' when stmi_req.req else
+                                '0';
+                app_wdf_end  <= '1' when stmi_req.req and handled_words = to_integer(unsigned(stmi_req.burstcnt)) else
+                                '0';
 
-                
-                app_cmd <= WR_CMD;
-                    app_wdf_wren <= '1';
-                    app_wdf_end  <= '1';
+                app_addr(26 downto 3)       <= burst_current_address(28 downto 5);
 
             when READING => 
                 stmi_ans.ack <= app_rd_data_valid = '1';
-                stmi_ans.done <= app_rd_data_valid = '1' and read_words = to_integer(unsigned(stmi_req.burstcnt));
+                stmi_ans.done <= app_rd_data_valid = '1' and handled_words = to_integer(unsigned(stmi_req.burstcnt));
 
                 app_cmd <= RD_CMD;
                 app_en <= '1' when burst_current_address /= burst_end_address else 
@@ -299,7 +292,7 @@ begin
                 stmi_ans.ack <= true;
                 stmi_ans.done <= true;
                 
-            when WAITING_RELEASE | WAITING_REPEAT | WAITS => 
+            when WAITS => 
                 null;
         end case;
 
@@ -332,7 +325,7 @@ begin
     --        probe20 => init_calib_complete,
     --        probe21 => fast_if_state,
     --        probe22 => cpu_req,
-    --        probe23 => read_words,
+    --        probe23 => handled_words,
     --        probe24 => burst_current_address,
     --        probe25 => burst_end_address,
     --        probe26 => stmi_req.burstcnt

@@ -30,8 +30,10 @@ package stmi is
     constant ONE_BST_CNT: stmi_bcnt_T := (0 => '1', others => '0');
     constant MAX_BST_CNT: stmi_bcnt_T := (others => '1');
 
+    subtype stmi_addr_T is std_logic_vector(31 downto 0); -- byte address
+
     type stmi_req_T is record 
-        addr           :   std_logic_vector(31 downto 0); -- byte address
+        addr           :   stmi_addr_T; 
         burstcnt       :   stmi_bcnt_T;
         mode           :   std_logic;
         prio           :   stmi_prio_T;

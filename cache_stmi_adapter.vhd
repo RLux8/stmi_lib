@@ -30,7 +30,7 @@ library stmi_lib;
 use stmi_lib.stmi.all;
 
 
-entity rv_stmi_adapter is
+entity cache_stmi_adapter is
     PORT(
         clk                 : IN     single;
         res_n               : IN     single;
@@ -54,9 +54,9 @@ entity rv_stmi_adapter is
         stmi_req            : OUT     stmi_req_T;
         stmi_ans            : IN      stmi_ans_T
     );
-end rv_stmi_adapter;
+end cache_stmi_adapter;
 
-architecture behav of rv_stmi_adapter is
+architecture behav of cache_stmi_adapter is
     type cache_req_type is (idle, ic_read, dc_read, dc_write);
     signal cache_req: cache_req_type;
 
@@ -76,7 +76,7 @@ begin
             transferred_words <= 0;
         else
             if clk'event and clk = '1' then              
-                if stmi_ans.ack then
+                if stmi_ans.done then
                     cache_req <= idle;
                 elsif cache_req = idle then   
                     if dc_wreq then
@@ -162,13 +162,13 @@ begin
             when dc_read =>
                 stmi_req_int.mode <= RD_MODE;
                 stmi_req_int.addr <= dc_raddr(stmi_req.addr'range);
-                stmi_req_int.req <= dc_rreq; --transferred_words_int /= 2;
+                stmi_req_int.req <= dc_rreq;--transferred_words_int /= 2;
                 --stmi_req_int.burstcnt <= (1 => '1', others => '0');
 
             when ic_read => 
                 stmi_req_int.mode <= RD_MODE;
                 stmi_req_int.addr <= ic_raddr(stmi_req.addr'range);
-                stmi_req_int.req <= ic_rreq; --transferred_words_int /= 2;
+                stmi_req_int.req <=  ic_rreq;--transferred_words_int /= 2;
                 --stmi_req_int.burstcnt <= (1 => '1', others => '0');
         end case;
 
