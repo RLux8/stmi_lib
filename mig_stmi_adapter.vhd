@@ -175,7 +175,7 @@ begin
                             burst_current_address <= std_logic_vector(unsigned(burst_current_address) + 32);
                         end if;
 
-                        if app_wdf_rdy = '1' then
+                        if app_wdf_rdy = '1' and stmi_req.req then
                             handled_words <= handled_words + 1;
                         end if;
                     
