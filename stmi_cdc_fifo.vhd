@@ -91,7 +91,7 @@ architecture mixed of stmi_cdc_fifo is
 
 
 
-    type b_serialise_state_T is (IDLE, READING, WRITING);
+    type b_serialise_state_T is (IDLE, READING, WRITING, WRITE_PULL_LAST);
     signal b_serialise_state: b_serialise_state_T;
     signal b_serialised_words: stmi_bcnt_T;
 
@@ -108,6 +108,7 @@ architecture mixed of stmi_cdc_fifo is
     subtype wdata_in_xfer_word is natural range a_req.wdata'range;
     subtype be_in_xfer_word is natural range a_req.wdata'length + a_req.be'length - 1 downto a_req.wdata'length;
 
+    signal request_hangup: boolean;
 begin
 
     a_serialise_ctrl_p: process(a_clk, a_res_n) is
@@ -179,7 +180,7 @@ begin
                             '0';
 
 
-                if atob_full = '0' then
+                if atob_full = '0' and a_req.req then
                     next_a_serialised_words <= std_logic_vector(unsigned(a_serialised_words) + 1);
                 end if;
                 
@@ -222,7 +223,7 @@ begin
         PORT MAP(
             wr_clk => b_clk,
             rd_clk => a_clk,
-            rst => not a_res_n,
+            rst => not b_res_n,
 
             din => btoa_din,
             wr_en => btoa_wen,
@@ -257,14 +258,27 @@ begin
                         end if;
 
                         b_serialised_words <= (others => '0');
-                    when READING | WRITING => 
+
+                    when READING => 
                         if b_ans.ack then
                             b_serialised_words <= std_logic_vector(unsigned(b_serialised_words) + 1);
                         end if;
 
                         if b_ans.done then
                             b_serialise_state <= IDLE;
+                        end if;
+
+                    when WRITING => 
+                        if b_ans.ack then
+                            b_serialised_words <= std_logic_vector(unsigned(b_serialised_words) + 1);
+                        end if;
+
+                        if b_ans.done then
+                            b_serialise_state <= WRITE_PULL_LAST;
                         end if;  
+                    when WRITE_PULL_LAST =>
+                        b_serialised_words <= (others => '0');
+                        b_serialise_state <= IDLE;
                 end case;
             end if;
         end if;
@@ -286,11 +300,14 @@ begin
         case b_serialise_state is
             when IDLE => 
 
-                if atob_dout(mode_in_xfer_word) = RD_MODE and atob_empty = '0' then
+                if atob_dout(mode_in_xfer_word) = RD_MODE and atob_empty = '0' and btoa_full = '0' then
                     b_req.addr <= atob_dout(addr_in_xfer_word);
                     b_req.mode <= atob_dout(mode_in_xfer_word);
                     b_req.burstcnt <= atob_dout(burstcnt_in_xfer_word);
                     b_req.req <= true;
+                elsif atob_dout(mode_in_xfer_word) = WR_MODE and atob_empty = '0' then
+                    -- get first data word
+                    atob_ren <= '1';
                 end if;
 
                 atob_ren <= not atob_empty;
@@ -300,7 +317,7 @@ begin
                             '0';
                 
                 -- get next command from atob fifo
-                atob_ren <= '1' when b_ans.done;
+                --atob_ren <= '1' when b_ans.done;
 
             when WRITING => 
                 b_req.req <= b_serialised_words /= b_req.burstcnt and atob_empty = '0';
@@ -310,9 +327,35 @@ begin
                 atob_ren <= '1' when b_ans.ack;
                 btoa_wen <= '1' when b_ans.done else
                             '0';
+
+            when WRITE_PULL_LAST => 
+                atob_ren <= '1';
+
         end case;
     end process b_deser_output_p;
 
+    
+    req_hangup_det_p: process(b_clk, b_res_n) is
+        variable holdc: natural;
+    begin
+        if b_res_n /= '1' then
+            holdc := 0;
+            request_hangup <= false;
+        else
+            if (b_clk'event and b_clk = '1') then  
+                request_hangup <= false;
+                if a_serialise_state /= IDLE then
+                    if holdc = 300 then
+                        request_hangup <= true;
+                    else
+                        holdc := holdc + 1;
+                    end if;
+                else
+                    holdc := 0;
+                end if;
+            end if;
+        end if;
+    end process req_hangup_det_p;
 
 
     --     imigif_ila : ila_11
@@ -328,6 +371,19 @@ begin
     --        probe6 => b_ans.ack,
     --        probe7 => b_ans.done,
     --        probe8 => b_serialise_state,
-    --        probe9 => b_serialised_words
+    --        probe9 => b_serialised_words,
+    --        probe10 => a_req.burstcnt,
+    --        probe11 => b_req.burstcnt,
+    --        probe12 => b_req.be,
+    --        probe13 => b_req.mode,
+    --        probe14 => atob_ren,
+    --        probe15 => atob_wen,
+    --        probe16 => atob_full,
+    --        probe17 => atob_empty,
+    --        probe18 => btoa_ren,
+    --        probe19 => btoa_wen,
+    --        probe20 => btoa_full,
+    --        probe21 => btoa_empty,
+    --        probe22 => request_hangup
     --    );
 end mixed;

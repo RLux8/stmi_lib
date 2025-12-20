@@ -66,6 +66,11 @@ architecture behav of cache_stmi_adapter is
 
     signal stmi_req_int: stmi_req_T;
     signal next_transferred_words, transferred_words: natural range 0 to 2;
+
+    signal request_hangup: boolean;
+
+    constant USE_READ_BURSTS: boolean := true;
+    constant USE_WRITE_BURSTS: boolean := false;
 begin
     -- slow side
     arbiter_slow_state_p: process (clk, res_n) is
@@ -117,7 +122,10 @@ begin
 
 
         if stmi_ans.ack then
-            transferred_words_int := transferred_words_int + 1;
+            if transferred_words_int /= 2 then
+                transferred_words_int := transferred_words_int + 1;
+            end if;
+
             case cache_req is
                 when dc_read => 
                     dc_rack <= true;
@@ -138,38 +146,64 @@ begin
                     stmi_req_int.wdata <= dc_wdata;
                     stmi_req_int.addr <= dc_waddr(stmi_req.addr'range);
                     stmi_req_int.req <= true;
-                    --stmi_req_int.burstcnt <= (1 => '1', others => '0');
+
+                    if USE_WRITE_BURSTS then
+                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
+                    end if;
                 elsif ic_rreq then
                     stmi_req_int.mode <= RD_MODE;
                     stmi_req_int.addr <= ic_raddr(stmi_req.addr'range);
                     stmi_req_int.req <= true;
-                    --stmi_req_int.burstcnt <= (1 => '1', others => '0');
+
+                    if USE_READ_BURSTS then
+                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
+                    end if;
                 elsif dc_rreq then
                     stmi_req_int.mode <= RD_MODE;
                     stmi_req_int.addr <= dc_raddr(stmi_req.addr'range);
                     stmi_req_int.req <= true;
-                    --stmi_req_int.burstcnt <= (1 => '1', others => '0');
+
+                    if USE_READ_BURSTS then
+                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
+                    end if;
                 end if;
     
             when dc_write =>
                 stmi_req_int.mode <= WR_MODE;
-                stmi_req_int.be <= dc_be;-- when dc_wreq else (others => '0');
+                
                 stmi_req_int.wdata <= dc_wdata;
                 stmi_req_int.addr <= dc_waddr(stmi_req.addr'range);
-                stmi_req_int.req <= dc_wreq;--transferred_words_int /= 2;
-                --stmi_req_int.burstcnt <= (1 => '1', others => '0');
+
+                if USE_WRITE_BURSTS then
+                    stmi_req_int.burstcnt <= (1 => '1', others => '0');
+                    stmi_req_int.req <= transferred_words_int /= 2;
+                    stmi_req_int.be <= dc_be when dc_wreq else (others => '0');
+                else
+                    stmi_req_int.req <= dc_wreq;
+                    stmi_req_int.be <= dc_be;
+                end if;
 
             when dc_read =>
                 stmi_req_int.mode <= RD_MODE;
                 stmi_req_int.addr <= dc_raddr(stmi_req.addr'range);
-                stmi_req_int.req <= dc_rreq;--transferred_words_int /= 2;
-                --stmi_req_int.burstcnt <= (1 => '1', others => '0');
+
+                if USE_READ_BURSTS then
+                    stmi_req_int.burstcnt <= (1 => '1', others => '0');
+                    stmi_req_int.req <= transferred_words_int /= 2;
+                else
+                    stmi_req_int.req <= dc_rreq;
+                end if;
 
             when ic_read => 
                 stmi_req_int.mode <= RD_MODE;
                 stmi_req_int.addr <= ic_raddr(stmi_req.addr'range);
-                stmi_req_int.req <=  ic_rreq;--transferred_words_int /= 2;
-                --stmi_req_int.burstcnt <= (1 => '1', others => '0');
+
+                if USE_READ_BURSTS then
+                    stmi_req_int.burstcnt <= (1 => '1', others => '0');
+                    stmi_req_int.req <= transferred_words_int /= 2;
+                else
+                    stmi_req_int.req <= ic_rreq;
+                end if;
         end case;
 
         next_transferred_words <= transferred_words_int;
@@ -177,6 +211,29 @@ begin
 
 
 
+    req_hangup_det_p: process(clk, res_n) is
+        variable holdc: natural;
+    begin
+        if res_n /= '1' then
+            holdc := 0;
+            request_hangup <= false;
+        else
+            if (clk'event and clk = '1') then  
+                request_hangup <= false;
+                if dc_rreq then
+                    if holdc = 300 then
+                        request_hangup <= true;
+                    else
+                        holdc := holdc + 1;
+                    end if;
+                else
+                    holdc := 0;
+                end if;
+            end if;
+        end if;
+    end process req_hangup_det_p;
+
+    
     --     imigif_ila : ila_12
     --    PORT MAP(
     --        clk => clk,      
@@ -187,6 +244,15 @@ begin
     --        probe3 => dc_rack,
     --        probe4 => dc_wreq,
     --        probe5 => dc_wack,
-    --        probe6 => cache_req
+    --        probe6 => cache_req,
+    --        probe7 => stmi_req.addr,
+    --        probe8 => stmi_req.be,
+    --        probe9 => stmi_req.burstcnt,
+    --        probe10 => stmi_req.mode,
+    --        probe11 => stmi_req.req,
+    --        probe12 => stmi_ans.ack,
+    --        probe13 => stmi_ans.done,
+    --        probe14 => request_hangup
+
     --    );
 end behav;

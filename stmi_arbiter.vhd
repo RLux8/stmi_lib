@@ -92,7 +92,7 @@ begin
                 s_ans(active_port_id).rdata <= m_ans.rdata;
             end if;
             --s_ans(active_port_id).rdata <= m_ans.rdata;
-            if active_port_id /= 0 and m_ans.ack then
+            if active_port_id /= 0 then
                 s_ans(active_port_id).ack <= m_ans.ack;
                 s_ans(active_port_id).done <= m_ans.done;
             end if;

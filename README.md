@@ -2,6 +2,8 @@
 A VHDL library for a memory interface which supports a single transfer at a time.
 Such a transfer may be a single bus word transfer but also a burst transfer.
 
+Think of STMI as an alternative to the Intel Avalon Memory Mapped Interface.
+
 This library contains an arbiter for multiple masters accessing a single slave as well as an example slave adapter to a Xilinx MIG DDR3 IP Core.
 Also, an adapter for the simple cache interface used by my [generic cache library](https://github.com/RLux8/generic_cache_lib) is provided.
 

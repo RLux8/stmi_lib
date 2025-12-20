@@ -50,15 +50,13 @@ architecture behav of stmi_fifo_if is
     signal filling_active: boolean;
     signal remaining_words: word;
     signal current_addr: word;
+    signal current_start_addr: word;
     signal job_done: boolean;
 
     signal total_words: word;
     signal start_addr: word;
     signal requesting: boolean;
 begin
-    
-    
-    --start_addr          <= X"40020000";-- test value
     start_addr          <= X"44000000";
     total_words         <= X"0000FD1F";
     
@@ -83,6 +81,7 @@ begin
         if res_n /= '1' then
             current_addr <= X"40300000";
             remaining_words <= X"0000FD20";
+            current_start_addr <= (others => '0');
             initial_wait := 0;
             filling_active  <= false;
             requesting <= false;
@@ -101,6 +100,7 @@ begin
                         remaining_words <= std_logic_vector(unsigned(remaining_words) - 1);
                     else
                         current_addr <= start_addr;
+                        current_start_addr <= start_addr;
                         remaining_words <= total_words;
                         job_done <= true;
                     end if;

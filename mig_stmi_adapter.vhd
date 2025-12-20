@@ -79,13 +79,17 @@ architecture behav of mig_stmi_adapter is
     signal burst_current_address: stmi_addr_T;
 
     signal handled_words: natural range 2 ** B_CNT_W downto 0;
+    signal commanded_words: natural range 2 ** B_CNT_W downto 0;
 
     signal fast_active: boolean;
+    signal request_hangup: boolean;
 begin
     stmi_res_n <= not ui_clk_sync_rst;
 
     -- registers 
     mig_if_state_p: process (ui_clk, stmi_res_n) is
+        variable handled_words_int: natural range 2 ** B_CNT_W downto 0;
+        variable burst_current_address_int: stmi_addr_T;
     begin
         if stmi_res_n = '0' then
             fast_if_state <= STARTUP;
@@ -93,7 +97,8 @@ begin
             fast_active <= false;
             burst_end_address <= (others => '0');
             burst_current_address <= (others => '0');
-            handled_words <= 1;
+            handled_words <= 0;
+            commanded_words <= 0;
         else
             if ui_clk'event and ui_clk = '1' then   
                 case fast_if_state is
@@ -124,19 +129,18 @@ begin
                         if stmi_req.req and fast_active then  
                             if stmi_req.mode = WR_MODE then
                                 fast_if_state <= WRITING;
+                                handled_words <= 0;
+                                commanded_words <= 0;
 
-                                if app_rdy = '1' then
+
+                                if app_rdy = '1' and app_wdf_rdy = '1' then
                                     burst_current_address <= std_logic_vector(unsigned(stmi_req.addr) + 32);
+                                    commanded_words <= 1;
 
-                                    if app_wdf_rdy = '1' then
-                                        if to_integer(unsigned(stmi_req.burstcnt)) = 1 then
-                                            fast_if_state <= ACK;
-                                        end if;
-                                        
-                                        handled_words <= 1;
-                                    else
-                                        handled_words <= 0;
+                                    if to_integer(unsigned(stmi_req.burstcnt)) = 1 then
+                                        fast_if_state <= ACK;
                                     end if;
+
                                 else
                                     burst_current_address <= stmi_req.addr;
                                 end if;
@@ -149,8 +153,8 @@ begin
 
                                 fast_if_state <= READING;
                                 handled_words <= 1;
-                                burst_end_address(burst_end_address'high downto 5) <= std_logic_vector(unsigned(stmi_req.addr(burst_end_address'high downto 5)) + unsigned(stmi_req.burstcnt));
                             end if;
+                            burst_end_address(burst_end_address'high downto 5) <= std_logic_vector(unsigned(stmi_req.addr(burst_end_address'high downto 5)) + unsigned(stmi_req.burstcnt));
                         end if;
 
                     when READING => 
@@ -167,17 +171,16 @@ begin
                         end if;
 
                     when WRITING => 
-                        if app_wdf_rdy = '1' and handled_words = to_integer(unsigned(stmi_req.burstcnt)) then
+                        burst_current_address_int := burst_current_address;
+                        if app_rdy = '1' and app_wdf_rdy = '1' and stmi_req.req and burst_current_address /= burst_end_address then
+                            burst_current_address_int := std_logic_vector(unsigned(burst_current_address) + 32);
+                        end if;
+
+                        if burst_current_address_int = burst_end_address then
                             fast_if_state <= WAITS;
                         end if;
 
-                        if app_rdy = '1' and burst_current_address /= burst_end_address then
-                            burst_current_address <= std_logic_vector(unsigned(burst_current_address) + 32);
-                        end if;
-
-                        if app_wdf_rdy = '1' and stmi_req.req then
-                            handled_words <= handled_words + 1;
-                        end if;
+                        burst_current_address <= burst_current_address_int;
                     
                     when ACK =>
                          fast_if_state <= WAITS;
@@ -197,6 +200,7 @@ begin
 
     mig_if_output_p: process(all) is
         variable output_req: boolean;
+        variable write_insert_ready: boolean;
     begin
         stmi_ans.ack            <= false;
         stmi_ans.done           <= false;
@@ -212,11 +216,12 @@ begin
         app_wdf_end             <= '0';
         app_wdf_data            <= stmi_req.wdata;
         app_wdf_mask            <= (others => '0');
+
         
 
-        -- for i in stmi_req.be'range loop
-        --     app_wdf_mask(i) <= not stmi_req.be(i);
-        -- end loop;
+        for i in stmi_req.be'range loop
+            app_wdf_mask(i) <= not stmi_req.be(i);
+        end loop;
 
         case fast_if_state is
             when STARTUP => 
@@ -253,10 +258,12 @@ begin
                     app_en <= '1';
                     if stmi_req.mode = WR_MODE then
                         app_cmd <= WR_CMD;
-                        if app_wdf_rdy = '1' and app_rdy = '1' then
+                        if app_wdf_rdy = '1' and app_rdy = '1'  then
                             app_wdf_wren <= '1';
-                            app_wdf_end  <= '1' when to_integer(unsigned(stmi_req.burstcnt)) = 1 else
-                                            '0';
+                            stmi_ans.ack <= true;
+                            if to_integer(unsigned(stmi_req.burstcnt)) = 1 then
+                                app_wdf_end  <= '1';
+                            end if;
                         end if;
                     else
                         app_cmd <= RD_CMD;
@@ -264,16 +271,19 @@ begin
                 end if;
 
             when WRITING => 
-                stmi_ans.ack <= app_wdf_rdy = '1';
-                stmi_ans.done <= app_wdf_rdy = '1' and handled_words = to_integer(unsigned(stmi_req.burstcnt));
+                write_insert_ready := app_rdy = '1' and app_wdf_rdy = '1' and stmi_req.req;
+
+
+                stmi_ans.ack <= write_insert_ready;
+                stmi_ans.done <= write_insert_ready and unsigned(burst_current_address) = unsigned(burst_end_address) - 32;
 
                 app_cmd <= WR_CMD;
-                app_en <= '1' when burst_current_address /= burst_end_address else 
+                app_en <= '1' when burst_current_address /= burst_end_address and write_insert_ready else 
                           '0';
 
-                app_wdf_wren <= '1' when stmi_req.req else
+                app_wdf_wren <= '1' when write_insert_ready  else
                                 '0';
-                app_wdf_end  <= '1' when stmi_req.req and handled_words = to_integer(unsigned(stmi_req.burstcnt)) else
+                app_wdf_end  <= '1' when write_insert_ready and unsigned(burst_current_address) = unsigned(burst_end_address) - 32 else
                                 '0';
 
                 app_addr(26 downto 3)       <= burst_current_address(28 downto 5);
@@ -297,6 +307,30 @@ begin
         end case;
 
     end process mig_if_output_p;
+
+
+
+    req_hangup_det_p: process(ui_clk, stmi_res_n) is
+        variable holdc: natural;
+    begin
+        if stmi_res_n /= '1' then
+            holdc := 0;
+            request_hangup <= false;
+        else
+            if (ui_clk'event and ui_clk = '1') then  
+                request_hangup <= false;
+                if stmi_ans.ack then
+                    if holdc = 300 then
+                        request_hangup <= true;
+                    else
+                        holdc := holdc + 1;
+                    end if;
+                else
+                    holdc := 0;
+                end if;
+            end if;
+        end if;
+    end process req_hangup_det_p;
 
 
     --    imigif_ila : ila_1
@@ -328,7 +362,9 @@ begin
     --        probe23 => handled_words,
     --        probe24 => burst_current_address,
     --        probe25 => burst_end_address,
-    --        probe26 => stmi_req.burstcnt
+    --        probe26 => stmi_req.burstcnt,
+    --        probe27 => request_hangup,
+    --        probe28 => stmi_ans.done
     --    );
 
 end behav;
