@@ -31,7 +31,8 @@ An exemplary read transfer in which the bus word starting at address 0x100 is re
 
 An exemplary write transfer in which a masked bus word is written to memory starting at address 0x100.
 
-Please note that the done-signal does not have to be raised as the last ack but in any following clock period:
+Please note that the done-signal does not have to be raised as the last ack but in any following clock period.
+This is the case for any transfer, an exemplary single-write-operation is shown:
 
 ![single_read](doc/stmi_single_write_delayed_done.svg)
 
