@@ -5,8 +5,12 @@ use IEEE.numeric_std.all;
 use IEEE.math_real.all;
 
 library stmi_lib;
-use stmi_lib.stmi.all;
-
+use stmi_lib.stmi.stmi_req_T;
+use stmi_lib.stmi.stmi_ans_T;
+use stmi_lib.stmi.WR_MODE;
+use stmi_lib.stmi.RD_MODE;
+use stmi_lib.stmi.stmi_bcnt_T;
+use stmi_lib.stmi.stmi_addr_T;
 
 entity stmi_large_slave_model is
     generic(

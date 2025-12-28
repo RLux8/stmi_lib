@@ -54,4 +54,9 @@ package stmi is
     constant IDLE_STMI_ANS: stmi_ans_T := (false, false, (others => 'X'));
 
     type stmi_ans_vec_T is array(natural range <>) of stmi_ans_T;
+
+    type natural_vec_T is array(natural range <>) of natural;
+    type addr_vec_T is array(natural range <>) of stmi_addr_T;
+    type rdata_vec_T is array(natural range <>) of std_logic_vector(255 downto 0);
+    type be_vec_T is array(natural range <>) of std_logic_vector(31 downto 0);
 end package stmi;

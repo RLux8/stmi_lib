@@ -21,6 +21,7 @@
 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
 
 library rv64i_lib;
 use rv64i_lib.interface.all;
@@ -31,25 +32,28 @@ use stmi_lib.stmi.all;
 
 
 entity cache_stmi_adapter is
+    GENERIC(
+        NUM_WRITE_PORTS: natural;
+        WRITE_BURST_CNTS: natural_vec_T;
+
+        NUM_READ_PORTS: natural;
+        READ_BURST_CNTS: natural_vec_T
+    );
     PORT(
         clk                 : IN     single;
         res_n               : IN     single;
+        
+        rreq                : IN     boolean_vector(NUM_READ_PORTS  downto 1);
+        raddr               : IN     addr_vec_T(NUM_READ_PORTS downto 1);
+        rdata               : OUT    rdata_vec_T(NUM_READ_PORTS  downto 1);
+        rack                : OUT    boolean_vector(NUM_READ_PORTS  downto 1);
 
-        ic_rreq             : IN     boolean;
-        ic_raddr            : IN     dword;
-        ic_rack             : OUT    boolean;
-        ic_rdata            : OUT    bus_type;
+        wreq                : IN     boolean_vector(NUM_WRITE_PORTS downto 1);
+        waddr               : IN     addr_vec_T(NUM_WRITE_PORTS downto 1);
+        wdata               : IN     rdata_vec_T(NUM_WRITE_PORTS downto 1);
+        wbe                 : IN     be_vec_T(NUM_WRITE_PORTS  downto 1);
+        wack                : OUT    boolean_vector(NUM_WRITE_PORTS downto 1);
 
-        dc_rreq             : IN     boolean;
-        dc_raddr            : IN     dword;
-        dc_wreq             : IN     boolean;
-        dc_waddr            : IN     dword;
-        dc_we               : IN     boolean;
-        dc_wdata            : IN     bus_type;
-        dc_rack             : OUT    boolean;
-        dc_wack             : OUT    boolean;
-        dc_rdata            : OUT    bus_type;
-        dc_be               : IN     std_logic_vector(31 downto 0);
 
         stmi_req            : OUT     stmi_req_T;
         stmi_ans            : IN      stmi_ans_T
@@ -57,15 +61,11 @@ entity cache_stmi_adapter is
 end cache_stmi_adapter;
 
 architecture behav of cache_stmi_adapter is
-    type cache_req_type is (idle, ic_read, dc_read, dc_write);
-    signal cache_req: cache_req_type;
+    signal active_port, next_active_port: natural range NUM_READ_PORTS + NUM_WRITE_PORTS downto 0;
 
-    signal last_dc_rreq: boolean;
-    signal last_dc_wreq: boolean;
-    signal last_ic_rreq: boolean;
 
     signal stmi_req_int: stmi_req_T;
-    signal next_transferred_words, transferred_words: natural range 0 to 2;
+    signal next_transferred_words, transferred_words: natural range 0 to 8;
 
     signal request_hangup: boolean;
 
@@ -77,183 +77,162 @@ begin
     arbiter_slow_state_p: process (clk, res_n) is
     begin
         if res_n = '0' then
-            cache_req <= idle;
             stmi_req <= IDLE_STMI_REQ;
             transferred_words <= 0;
+            active_port <= 0;
         else
             if clk'event and clk = '1' then  
                 stmi_req <= stmi_req_int;
 
                 if stmi_ans.done then
-                    cache_req <= idle;
                     stmi_req <= IDLE_STMI_REQ;
-                elsif cache_req = idle then
-                    if dc_wreq and (WRITE_BEFORE_READ or (dc_waddr = ic_raddr and ic_rreq) or (dc_waddr = dc_raddr and dc_rreq)) then
-                        cache_req <= dc_write;
-                    elsif ic_rreq then
-                        cache_req <= ic_read;
-                    elsif dc_rreq then
-                        cache_req <= dc_read;
-                    elsif dc_wreq then
-                        cache_req <= dc_write;
-                    end if;
                 end if;
 
+                active_port <= next_active_port;
                 transferred_words <= next_transferred_words;
             end if;
         end if;
     end process arbiter_slow_state_p;
-    
 
 
-    dc_rdata <= stmi_ans.rdata;
-    ic_rdata <= stmi_ans.rdata;
-
-    arbiter_slow_ouput_p: process(all) is
-        variable transferred_words_int: natural range 0 to 2;
+    state_trans_p: process(all) is
+        variable transferred_words_int: natural range 0 to 8;
+        variable next_active_port_int: natural range NUM_READ_PORTS + NUM_WRITE_PORTS downto 0;
     begin
-        stmi_req_int.req <= false;
-        stmi_req_int.addr <= dc_raddr(stmi_req.addr'range);
-        stmi_req_int.wdata <= dc_wdata;
-        stmi_req_int.mode <= RD_MODE;
-        stmi_req_int.prio <= 2;
-        stmi_req_int.be <= dc_be;
-        stmi_req_int.burstcnt <= (0 => '1', others => '0');
-        dc_wack <= false;
-        ic_rack <= false;
-        dc_rack <= false;
+        next_active_port_int := active_port;
         transferred_words_int := transferred_words;
 
+        if transferred_words_int /= 8 and stmi_ans.ack then
+            transferred_words_int := transferred_words_int + 1;
+        end if;
+
+        if stmi_ans.done then
+            next_active_port_int := 0;
+            transferred_words_int := 0;
+        elsif active_port = 0 then
+            if WRITE_BEFORE_READ then
+                for wi in wreq'low to wreq'high loop
+                    if next_active_port_int = 0 then
+                        if wreq(wi) then
+                            next_active_port_int := wi + NUM_READ_PORTS;
+                        end if;
+                    end if;
+                end loop;
+                for ri in rreq'low to rreq'high loop
+                    if next_active_port_int = 0 then
+                        if rreq(ri) then
+                            next_active_port_int := ri;
+                        end if;
+                    end if;
+                end loop;
+            else
+                for ri in rreq'low to rreq'high loop
+                    if next_active_port_int /= 0 then
+                        if rreq(ri) then
+                            next_active_port_int := ri;
+                        end if;
+                    end if;
+                end loop;
+                for wi in wreq'low to wreq'high loop
+                    if next_active_port_int /= 0 then
+                        if wreq(wi) then
+                            next_active_port_int := wi + NUM_READ_PORTS;
+                        end if;
+                    end if;
+                end loop;
+            end if;
+        end if;
+
+
+        next_active_port <= next_active_port_int;
+        next_transferred_words <= transferred_words_int;
+    end process state_trans_p;
+    
+
+
+    
+
+    arbiter_slow_ouput_p: process(all) is
+        variable out_port: natural range NUM_READ_PORTS + NUM_WRITE_PORTS downto 0; 
+    begin
+        stmi_req_int.req <= false;
+        stmi_req_int.addr <= (others => 'X');
+        stmi_req_int.wdata <= (others => 'X');
+        stmi_req_int.mode <= RD_MODE;
+        stmi_req_int.prio <= 2;
+        stmi_req_int.be <= (others => 'X');
+        stmi_req_int.burstcnt <= (0 => '1', others => '0');
+
+        for ri in rreq'range loop
+            rack(ri) <= false;
+            rdata(ri) <= (others => 'X');
+        end loop;
+
+        for wi in wreq'range loop
+            wack(wi) <= false;
+        end loop;
 
         if stmi_ans.ack then
-            if transferred_words_int /= 2 then
-                transferred_words_int := transferred_words_int + 1;
+            if active_port > NUM_READ_PORTS then
+                wack(active_port - NUM_READ_PORTS) <= true;
+            elsif active_port > 0 then
+                rack(active_port) <= true;
             end if;
-
-            case cache_req is
-                when dc_read => 
-                    dc_rack <= true;
-                when ic_read => 
-                    ic_rack <= true;
-                when dc_write => 
-                    dc_wack <= true;
-                when others => null;
-            end case;
         end if;
-        
 
-        case cache_req is
-            when idle => 
-                transferred_words_int := 0;
-                if dc_wreq and (WRITE_BEFORE_READ or (dc_waddr = ic_raddr and ic_rreq) or (dc_waddr = dc_raddr and dc_rreq)) then
-                    stmi_req_int.mode <= WR_MODE;
-                    stmi_req_int.be <= dc_be;
-                    stmi_req_int.wdata <= dc_wdata;
-                    stmi_req_int.addr <= dc_waddr(stmi_req.addr'range);
-                    stmi_req_int.req <= true;
 
-                    if USE_WRITE_BURSTS then
-                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
-                    end if;
-                elsif ic_rreq then
-                    stmi_req_int.mode <= RD_MODE;
-                    stmi_req_int.addr <= ic_raddr(stmi_req.addr'range);
-                    stmi_req_int.req <= true;
+        if active_port = 0 then
+            out_port := next_active_port;
+        else
+            out_port := active_port;
+        end if;
 
-                    if USE_READ_BURSTS then
-                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
-                    end if;
-                    --assert not (ic_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
-                elsif dc_rreq then
-                    stmi_req_int.mode <= RD_MODE;
-                    stmi_req_int.addr <= dc_raddr(stmi_req.addr'range);
-                    stmi_req_int.req <= true;
 
-                    if USE_READ_BURSTS then
-                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
-                    end if;
-                    --assert not (dc_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
-                elsif dc_wreq then
-                    stmi_req_int.mode <= WR_MODE;
-                    stmi_req_int.be <= dc_be;
-                    stmi_req_int.wdata <= dc_wdata;
-                    stmi_req_int.addr <= dc_waddr(stmi_req.addr'range);
-                    stmi_req_int.req <= true;
-
-                    if USE_WRITE_BURSTS then
-                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
-                    end if;
-                end if;
+        if active_port = 0 then
+            null;
+        elsif active_port > NUM_READ_PORTS then
+            stmi_req_int.mode <= WR_MODE;
+            stmi_req_int.be <= wbe(active_port - NUM_READ_PORTS) when wreq(active_port - NUM_READ_PORTS) else (others => '0');
+            stmi_req_int.wdata <= wdata(active_port - NUM_READ_PORTS);
+            stmi_req_int.addr <= waddr(active_port - NUM_READ_PORTS);
+            stmi_req_int.req <= transferred_words /= WRITE_BURST_CNTS(active_port - NUM_READ_PORTS - 1);
+            stmi_req_int.burstcnt <= std_logic_vector(to_unsigned(WRITE_BURST_CNTS(active_port - NUM_READ_PORTS - 1), stmi_req_int.burstcnt'length));
+        else
+            stmi_req_int.mode <= RD_MODE;
+            stmi_req_int.addr <= raddr(active_port);
+            stmi_req_int.req <= transferred_words /= READ_BURST_CNTS(active_port - 1);
+            stmi_req_int.burstcnt <= std_logic_vector(to_unsigned(READ_BURST_CNTS(active_port - 1), stmi_req_int.burstcnt'length));
+        end if;
     
-            when dc_write =>
-                stmi_req_int.mode <= WR_MODE;
-                
-                stmi_req_int.wdata <= dc_wdata;
-                stmi_req_int.addr <= dc_waddr(stmi_req.addr'range);
 
-                if USE_WRITE_BURSTS then
-                    stmi_req_int.burstcnt <= (1 => '1', others => '0');
-                    stmi_req_int.req <= transferred_words_int /= 2;
-                    stmi_req_int.be <= dc_be when dc_wreq else (others => '0');
-                else
-                    stmi_req_int.req <= dc_wreq;
-                    stmi_req_int.be <= dc_be;
-                end if;
-
-            when dc_read =>
-                stmi_req_int.mode <= RD_MODE;
-                stmi_req_int.addr <= dc_raddr(stmi_req.addr'range);
-
-                if USE_READ_BURSTS then
-                    stmi_req_int.burstcnt <= (1 => '1', others => '0');
-                    stmi_req_int.req <= transferred_words_int /= 2;
-                else
-                    stmi_req_int.req <= dc_rreq;
-                end if;
-
-                --assert not (dc_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
-            
-            
-            when ic_read => 
-                stmi_req_int.mode <= RD_MODE;
-                stmi_req_int.addr <= ic_raddr(stmi_req.addr'range);
-
-                if USE_READ_BURSTS then
-                    stmi_req_int.burstcnt <= (1 => '1', others => '0');
-                    stmi_req_int.req <= transferred_words_int /= 2;
-                else
-                    stmi_req_int.req <= ic_rreq;
-                end if;
-
-                --assert not (ic_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
-        end case;
-
-        next_transferred_words <= transferred_words_int;
+        for ri in rdata'range loop
+            rdata(ri) <= stmi_ans.rdata;
+        end loop;
     end process arbiter_slow_ouput_p;
 
 
 
-    req_hangup_det_p: process(clk, res_n) is
-        variable holdc: natural;
-    begin
-        if res_n /= '1' then
-            holdc := 0;
-            request_hangup <= false;
-        else
-            if (clk'event and clk = '1') then  
-                request_hangup <= false;
-                if dc_rreq then
-                    if holdc = 300 then
-                        request_hangup <= true;
-                    else
-                        holdc := holdc + 1;
-                    end if;
-                else
-                    holdc := 0;
-                end if;
-            end if;
-        end if;
-    end process req_hangup_det_p;
+    -- req_hangup_det_p: process(clk, res_n) is
+    --     variable holdc: natural;
+    -- begin
+    --     if res_n /= '1' then
+    --         holdc := 0;
+    --         request_hangup <= false;
+    --     else
+    --         if (clk'event and clk = '1') then  
+    --             request_hangup <= false;
+    --             if dc_rreq then
+    --                 if holdc = 300 then
+    --                     request_hangup <= true;
+    --                 else
+    --                     holdc := holdc + 1;
+    --                 end if;
+    --             else
+    --                 holdc := 0;
+    --             end if;
+    --         end if;
+    --     end if;
+    -- end process req_hangup_det_p;
 
     
     --     imigif_ila : ila_12
