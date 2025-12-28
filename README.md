@@ -9,7 +9,7 @@ Also, an adapter for the simple cache interface used by my [generic cache librar
 
 ## Signals
 ### Master to slave
-* req: Transaction request or bus word to be written is valid
+* req: Transaction request or bus word to be written is valid (once asserted, may not be lowered until first ack)
 * addr: Byte address at start of transfer, subsequent words are at following byte addresses (+0x20, +0x40, ...)
 * mode: Transfer mode
 * burstcnt: Number of bus words to be transported during transaction

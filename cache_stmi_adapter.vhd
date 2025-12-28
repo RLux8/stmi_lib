@@ -70,7 +70,8 @@ architecture behav of cache_stmi_adapter is
     signal request_hangup: boolean;
 
     constant USE_READ_BURSTS: boolean := true;
-    constant USE_WRITE_BURSTS: boolean := false;
+    constant USE_WRITE_BURSTS: boolean := false; -- todo: add logic to only burst for ascending write request cache transfers
+    constant WRITE_BEFORE_READ: boolean := true;
 begin
     -- slow side
     arbiter_slow_state_p: process (clk, res_n) is
@@ -80,21 +81,24 @@ begin
             stmi_req <= IDLE_STMI_REQ;
             transferred_words <= 0;
         else
-            if clk'event and clk = '1' then              
+            if clk'event and clk = '1' then  
+                stmi_req <= stmi_req_int;
+
                 if stmi_ans.done then
                     cache_req <= idle;
-                elsif cache_req = idle then   
-                    if dc_wreq then
+                    stmi_req <= IDLE_STMI_REQ;
+                elsif cache_req = idle then
+                    if dc_wreq and (WRITE_BEFORE_READ or (dc_waddr = ic_raddr and ic_rreq) or (dc_waddr = dc_raddr and dc_rreq)) then
                         cache_req <= dc_write;
                     elsif ic_rreq then
                         cache_req <= ic_read;
                     elsif dc_rreq then
                         cache_req <= dc_read;
+                    elsif dc_wreq then
+                        cache_req <= dc_write;
                     end if;
                 end if;
 
-
-                stmi_req <= stmi_req_int;
                 transferred_words <= next_transferred_words;
             end if;
         end if;
@@ -136,11 +140,12 @@ begin
                 when others => null;
             end case;
         end if;
+        
 
         case cache_req is
             when idle => 
                 transferred_words_int := 0;
-                if dc_wreq then
+                if dc_wreq and (WRITE_BEFORE_READ or (dc_waddr = ic_raddr and ic_rreq) or (dc_waddr = dc_raddr and dc_rreq)) then
                     stmi_req_int.mode <= WR_MODE;
                     stmi_req_int.be <= dc_be;
                     stmi_req_int.wdata <= dc_wdata;
@@ -158,12 +163,24 @@ begin
                     if USE_READ_BURSTS then
                         stmi_req_int.burstcnt <= (1 => '1', others => '0');
                     end if;
+                    --assert not (ic_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
                 elsif dc_rreq then
                     stmi_req_int.mode <= RD_MODE;
                     stmi_req_int.addr <= dc_raddr(stmi_req.addr'range);
                     stmi_req_int.req <= true;
 
                     if USE_READ_BURSTS then
+                        stmi_req_int.burstcnt <= (1 => '1', others => '0');
+                    end if;
+                    --assert not (dc_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
+                elsif dc_wreq then
+                    stmi_req_int.mode <= WR_MODE;
+                    stmi_req_int.be <= dc_be;
+                    stmi_req_int.wdata <= dc_wdata;
+                    stmi_req_int.addr <= dc_waddr(stmi_req.addr'range);
+                    stmi_req_int.req <= true;
+
+                    if USE_WRITE_BURSTS then
                         stmi_req_int.burstcnt <= (1 => '1', others => '0');
                     end if;
                 end if;
@@ -194,6 +211,9 @@ begin
                     stmi_req_int.req <= dc_rreq;
                 end if;
 
+                --assert not (dc_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
+            
+            
             when ic_read => 
                 stmi_req_int.mode <= RD_MODE;
                 stmi_req_int.addr <= ic_raddr(stmi_req.addr'range);
@@ -204,6 +224,8 @@ begin
                 else
                     stmi_req_int.req <= ic_rreq;
                 end if;
+
+                --assert not (ic_raddr(stmi_req.addr'range) = dc_waddr(stmi_req.addr'range) and dc_wreq) severity failure;
         end case;
 
         next_transferred_words <= transferred_words_int;

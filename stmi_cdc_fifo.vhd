@@ -175,7 +175,7 @@ begin
                 atob_din(wdata_in_xfer_word) <= a_req.wdata;
                 atob_din(be_in_xfer_word) <= a_req.be;
 
-                a_ans.ack <= atob_full = '0';
+                a_ans.ack <= atob_full = '0' and a_req.req;
                 atob_wen <= '1' when a_req.req else
                             '0';
 
