@@ -23,10 +23,6 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
-library rv64i_lib;
-use rv64i_lib.interface.all;
-USE rv64i_lib.isa.ALL;
-
 library stmi_lib;
 use stmi_lib.stmi.all;
 
@@ -40,8 +36,8 @@ entity cache_stmi_adapter is
         READ_BURST_CNTS: natural_vec_T
     );
     PORT(
-        clk                 : IN     single;
-        res_n               : IN     single;
+        clk                 : IN     std_logic;
+        res_n               : IN     std_logic;
         
         rreq                : IN     boolean_vector(NUM_READ_PORTS  downto 1);
         raddr               : IN     addr_vec_T(NUM_READ_PORTS downto 1);
