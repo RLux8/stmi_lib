@@ -50,6 +50,7 @@ architecture behav of stmi_block_mem_adapter is
 begin
     stmi_ans.rdata <= rdata;
     wdata <= stmi_req.wdata;
+    handle_request <= true;
     
 
 
@@ -72,7 +73,7 @@ begin
                             else
                                 current_state <= WRITING;
                             end if;
-                            tmp_addr := std_logic_vector(unsigned(stmi_req.addr) + unsigned(stmi_req.burstcnt & "00000"));
+                            tmp_addr := std_logic_vector(unsigned(stmi_req.addr) + (unsigned(stmi_req.burstcnt) * 32));
                             end_addr <= tmp_addr;
                             req_burstcnt <= stmi_req.burstcnt;
                         end if;
@@ -93,8 +94,8 @@ begin
         end if;
     end process transaction_state_p;
 
-    raddr <= next_addr(28 downto 5);
-    waddr <= current_addr(28 downto 5);
+    raddr <= next_addr(AWIDTH + 4 downto 5);
+    waddr <= current_addr(AWIDTH + 4 downto 5);
 
     fsm_out_p: process(all) is
     begin

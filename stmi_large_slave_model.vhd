@@ -72,7 +72,7 @@ begin
                             else
                                 current_state <= WRITING;
                             end if;
-                            tmp_addr := std_logic_vector(unsigned(stmi_req.addr) + unsigned(stmi_req.burstcnt & "00000"));
+                            tmp_addr := std_logic_vector(unsigned(stmi_req.addr) + unsigned(stmi_req.burstcnt) * 32);
                             end_addr <= tmp_addr;
                             req_burstcnt <= stmi_req.burstcnt;
                         end if;
@@ -202,7 +202,7 @@ begin
 
 
     -- iburstchk: if CHECK_BURSTS generate
-    --     --this burst check mode works on the premise of always following up a write burst with a series of single writes containing the same data
+    --     --this burst check mode works on the premise of always following up a write burst with a series of std_logic writes containing the same data
 
     --     type burst_data_T is array(2**B_CNT_W-1 downto 0) of std_logic_vector(stmi_req.wdata’range);
     --     signal burst_data: burst_data_T;
