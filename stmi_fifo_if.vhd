@@ -23,9 +23,6 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use ieee.numeric_std.all;
 
-library rv64i_lib;
-use rv64i_lib.isa.all;
-
 library stmi_lib;
 use stmi_lib.stmi.all;
 
@@ -36,6 +33,14 @@ entity stmi_fifo_if is
 
         stmi_req    : OUT stmi_req_T;
         stmi_ans    : IN  stmi_ans_T := IDLE_STMI_ANS;
+
+        start_addr  : IN stmi_addr_T := X"44000000";
+        total_words : IN stmi_addr_T := X"0000FD1F";
+        repeat      : IN boolean := true;
+        start       : IN boolean := false;
+
+        use_next    : OUT boolean; 
+
 
         fifo_full   : IN std_logic;
         fifo_fill   : OUT std_logic;
@@ -48,24 +53,16 @@ end stmi_fifo_if;
 
 architecture behav of stmi_fifo_if is
     signal filling_active: boolean;
-    signal remaining_words: word;
-    signal current_addr: word;
-    signal current_start_addr: word;
-    signal job_done: boolean;
+    signal remaining_words: stmi_addr_T;
+    signal current_addr: stmi_addr_T;
 
-    signal total_words: word;
-    signal start_addr: word;
     signal requesting: boolean;
 begin
-    start_addr          <= X"44000000";
-    total_words         <= X"0000FD1F";
-    
-
     stmi_req.prio       <= 3; --//TODO: maybe we should find a smarter way based on fifo fill level?
     stmi_req.req        <= requesting; -- make sure we only start requesting again after updating the address
     stmi_req.addr       <= current_addr;
     stmi_req.mode       <= RD_MODE;
-    stmi_req.burstcnt   <= (3 => '1', others => '0'); -- 8 256 bit words per transfer
+    stmi_req.burstcnt   <= (3 => '1', others => '0'); -- 8 256 bit stmi_addr_Ts per transfer
 
     fifo_fill           <= '1' when stmi_ans.ack else 
                            '0';
@@ -81,10 +78,10 @@ begin
         if res_n /= '1' then
             current_addr <= X"40300000";
             remaining_words <= X"0000FD20";
-            current_start_addr <= (others => '0');
             initial_wait := 0;
             filling_active  <= false;
             requesting <= false;
+            use_next <= false;
         else
             if (clk'event and clk = '1') then 
                 if initial_wait /= 1_000 then
@@ -92,20 +89,25 @@ begin
                 else
                     filling_active  <= true;-- test value
                 end if;
-             
-                job_done <= false;
-                if stmi_ans.ack then
-                    if to_integer(unsigned(remaining_words)) /= 0 then
+                
+                if to_integer(unsigned(remaining_words)) /= 0 then
+                    if stmi_ans.ack then
                         current_addr <= std_logic_vector(unsigned(current_addr) + 32);
                         remaining_words <= std_logic_vector(unsigned(remaining_words) - 1);
+                        requesting <= false;
+                    end if;
+                else
+                    current_addr <= start_addr;
+                    remaining_words <= total_words;
+                    
+                    if not repeat then
+                        requesting <= start;
                     else
-                        current_addr <= start_addr;
-                        current_start_addr <= start_addr;
-                        remaining_words <= total_words;
-                        job_done <= true;
+                        use_next <= not use_next;
+                        requesting <= true;
                     end if;
 
-                    requesting <= false;
+                    
                 end if;
                 
                 if filling_active and fifo_full = '0' then

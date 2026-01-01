@@ -44,6 +44,7 @@ architecture behav of stmi_large_slave_model is
     signal handle_request: boolean;
     signal next_sent_words, sent_words: natural;
     signal req_burstcnt: stmi_bcnt_T;
+    signal exp_bcnt: stmi_addr_T;
 
 
     constant CHECK_BURSTS: boolean := true;
@@ -72,7 +73,9 @@ begin
                             else
                                 current_state <= WRITING;
                             end if;
-                            tmp_addr := std_logic_vector(unsigned(stmi_req.addr) + unsigned(stmi_req.burstcnt) * 32);
+                            tmp_addr := (others => '0');
+                            tmp_addr(8 downto 5) := stmi_req.burstcnt;
+                            tmp_addr := std_logic_vector(unsigned(stmi_req.addr) + unsigned(tmp_addr));
                             end_addr <= tmp_addr;
                             req_burstcnt <= stmi_req.burstcnt;
                         end if;
