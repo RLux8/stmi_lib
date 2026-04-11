@@ -23,7 +23,6 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use ieee.numeric_std.all;
 
-library a100t_soc_lib;
 
 library stmi_lib;
 use stmi_lib.stmi.all;
