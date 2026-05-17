@@ -14,7 +14,8 @@ use stmi_lib.stmi.stmi_addr_T;
 
 entity stmi_large_slave_model is
     generic(
-        RANDOM_DELAYS: boolean := false
+        RANDOM_DELAYS: boolean := false;
+        INIT_VALS: natural := 0
     );
     port(
         clk     : IN std_logic;
@@ -145,7 +146,7 @@ begin
         type intMemArrayT is array(requiredwords - 1 downto 0, 2**raddr'length - 1 downto 0) of integer; 
     
         -- use a variable since it is supposed to use much less memory than a signal for some reason (more than an order of magnitude less)
-        variable intMemArray: intMemArrayT := (others => (others => 1234567890));
+        variable intMemArray: intMemArrayT := (others => (others => INIT_VALS));
         variable tmp_wdata: std_logic_vector(wdata'range);
     begin
         if clk'event and clk = '1' then
