@@ -75,7 +75,7 @@ begin
                                 current_state <= WRITING;
                             end if;
                             tmp_addr := (others => '0');
-                            tmp_addr(8 downto 5) := stmi_req.burstcnt;
+                            tmp_addr(5 + stmi_req.burstcnt'left  downto 5) := stmi_req.burstcnt;
                             tmp_addr := std_logic_vector(unsigned(stmi_req.addr) + unsigned(tmp_addr));
                             end_addr <= tmp_addr;
                             req_burstcnt <= stmi_req.burstcnt;
