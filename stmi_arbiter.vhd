@@ -29,7 +29,8 @@ use stmi_lib.stmi.all;
 
 entity stmi_arbiter is
     generic(
-        PORTS: positive
+        PORTS: positive;
+        STATISTICS: boolean := false
     );
     port(
         clk     : IN std_logic;
@@ -205,8 +206,54 @@ begin
             next_in_request <= next_in_req_int;
             next_active_port_id <= next_active_port_id_int;
         end process next_serve_det_p;
-        
-
     end generate i_passthrough_or_arb;
+
+
+    istats: if STATISTICS generate
+        component vio_2 is 
+            port(
+                clk: in std_logic;
+                
+                probe_in0: in std_logic_vector(19 downto 0);
+                probe_in1: in std_logic_vector(19 downto 0);
+                probe_in2: in std_logic_vector(19 downto 0);
+                probe_in3: in std_logic_vector(19 downto 0);
+                probe_in4: in std_logic_vector(19 downto 0);
+                probe_in5: in std_logic_vector(19 downto 0);
+                probe_in6: in std_logic_vector(19 downto 0);
+                probe_in7: in std_logic_vector(19 downto 0)
+            );
+            end component;
+
+        subtype counts_T is unsigned(19 downto 0);
+        type channel_counts_T is array(8 downto 1) of counts_T;
+
+        signal total_counts    : counts_T;
+        signal active_counts   : channel_counts_T;
+        signal acquired_counts : channel_counts_T;
+    begin
+        stats_p: process(clk, res_n) is
+        begin
+            if res_n /= '1' then
+                total_counts    <= (others => '0');
+                active_counts   <= (others => (others => '0'));
+                acquired_counts <= (others => (others => '0'));
+            else
+                if (clk'event and clk = '1') then  
+                    if to_integer(total_counts) = 1_000_000 then
+                        total_counts    <= (others => '0');
+                        acquired_counts <= active_counts;
+                        active_counts   <= (others => (others => '0'));
+                    else
+                        total_counts <= total_counts + 1;
+                    end if;
+
+                    if active_port_id /= 0 then
+                        active_counts(active_port_id) <= active_counts(active_port_id) + 1;
+                    end if;
+                end if;
+            end if;
+        end process stats_p;
+    end generate;
 
 end behav;
