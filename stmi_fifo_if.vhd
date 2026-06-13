@@ -36,6 +36,7 @@ entity stmi_fifo_if is
 
         start_addr  : IN stmi_addr_T := X"44000000";
         total_words : IN stmi_addr_T := X"0000FD1F";
+        burst_words : IN stmi_bcnt_T := X"10";
         repeat      : IN boolean := true;
         start       : IN boolean := false;
 
@@ -62,7 +63,7 @@ begin
     stmi_req.req        <= requesting; -- make sure we only start requesting again after updating the address
     stmi_req.addr       <= current_addr;
     stmi_req.mode       <= RD_MODE;
-    stmi_req.burstcnt   <= (3 => '1', others => '0'); -- 8 256 bit stmi_addr_Ts per transfer
+    stmi_req.burstcnt   <= burst_words;
 
     fifo_fill           <= '1' when stmi_ans.ack else 
                            '0';
@@ -94,6 +95,9 @@ begin
                     if stmi_ans.ack then
                         current_addr <= std_logic_vector(unsigned(current_addr) + 32);
                         remaining_words <= std_logic_vector(unsigned(remaining_words) - 1);
+                    end if;
+
+                    if stmi_ans.done then
                         requesting <= false;
                     end if;
                 else
