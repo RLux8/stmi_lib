@@ -25,7 +25,7 @@ package stmi is
     constant RD_MODE: std_logic := '0';
     subtype stmi_prio_T is natural range 3 downto 0; 
 
-    constant B_CNT_W: natural := 4;
+    constant B_CNT_W: natural := 6;
     subtype stmi_bcnt_T is std_logic_vector(B_CNT_W - 1 downto 0);
     constant ONE_BST_CNT: stmi_bcnt_T := (0 => '1', others => '0');
     constant MAX_BST_CNT: stmi_bcnt_T := (others => '1');
