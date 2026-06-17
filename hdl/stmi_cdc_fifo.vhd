@@ -48,7 +48,7 @@ end stmi_cdc_fifo;
 architecture mixed of stmi_cdc_fifo is
     COMPONENT two_clock_288_fifo IS
     PORT (
-        rst : IN STD_LOGIC;
+        srst : IN STD_LOGIC;
         wr_clk : IN STD_LOGIC;
         rd_clk : IN STD_LOGIC;
         din : IN STD_LOGIC_VECTOR(287 DOWNTO 0);
@@ -62,7 +62,7 @@ architecture mixed of stmi_cdc_fifo is
 
     COMPONENT two_clock_256_bit_fifo IS
     PORT (
-        rst : IN STD_LOGIC;
+        srst : IN STD_LOGIC;
         wr_clk : IN STD_LOGIC;
         rd_clk : IN STD_LOGIC;
         din : IN STD_LOGIC_VECTOR(255 DOWNTO 0);
@@ -207,7 +207,7 @@ begin
         PORT MAP(
             wr_clk => a_clk,
             rd_clk => b_clk,
-            rst => not a_res_n,
+            srst => not a_res_n,
 
             din => atob_din,
             wr_en => atob_wen,
@@ -222,7 +222,7 @@ begin
         PORT MAP(
             wr_clk => b_clk,
             rd_clk => a_clk,
-            rst => not b_res_n,
+            srst => not b_res_n,
 
             din => btoa_din,
             wr_en => btoa_wen,
