@@ -151,6 +151,7 @@ begin
                         last_serve_id(0) <= next_active_port_id;                      
                     end if;
                     active_port_id <= next_active_port_id;
+                    in_request <= next_in_request;
                     
                     startup_done <= true;
                 end if;
