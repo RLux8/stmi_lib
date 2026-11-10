@@ -15,7 +15,8 @@ use stmi_lib.stmi.stmi_addr_T;
 entity stmi_large_slave_model is
     generic(
         RANDOM_DELAYS: boolean := false;
-        INIT_VALS: natural := 0
+        INIT_VALS: natural := 0;
+        INIT_FILE: string := ""        -- binary image loaded at address 0 (byte n at address n), "": none
     );
     port(
         clk     : IN std_logic;
@@ -148,7 +149,56 @@ begin
         -- use a variable since it is supposed to use much less memory than a signal for some reason (more than an order of magnitude less)
         variable intMemArray: intMemArrayT := (others => (others => INIT_VALS));
         variable tmp_wdata: std_logic_vector(wdata'range);
+        variable init_done: boolean := false;
+
+        -- one line of the memory written with the whole word
+        procedure store_line(addr: natural; data: std_logic_vector(wdata'range)) is
+        begin
+            for i in intMemArray'range(1) loop
+                if (i + 1) * storeTypeWidth - 1 < wdata'length then
+                    intMemArray(i, addr) := to_integer(signed(data((i + 1) * storeTypeWidth - 1 downto i * storeTypeWidth)));
+                else
+                    intMemArray(i, addr) := to_integer(signed(data(data'left downto i * storeTypeWidth)));
+                end if;
+            end loop;
+        end procedure store_line;
+
+        -- INIT_FILE read byte by byte, byte i of a line in bits 8 * i + 7 downto 8 * i (as written with be(i))
+        procedure load_init_file is
+            type char_file_T is file of character;
+            file f: char_file_T;
+            variable status: file_open_status;
+            variable c: character;
+            variable line_data: std_logic_vector(wdata'range);
+            variable line_ix: natural := 0;
+            variable byte_ix: natural := 0;
+        begin
+            file_open(status, f, INIT_FILE, read_mode);
+            assert status = open_ok report "stmi_large_slave_model: cannot open " & INIT_FILE severity failure;
+            line_data := (others => '0');
+            while not endfile(f) loop
+                read(f, c);
+                line_data(byte_ix * 8 + 7 downto byte_ix * 8) := std_logic_vector(to_unsigned(character'pos(c), 8));
+                byte_ix := byte_ix + 1;
+                if byte_ix = wdata'length / 8 or endfile(f) then
+                    assert line_ix < 2**raddr'length report "stmi_large_slave_model: " & INIT_FILE & " is too large" severity failure;
+                    store_line(line_ix, line_data);
+                    line_ix := line_ix + 1;
+                    byte_ix := 0;
+                    line_data := (others => '0');
+                end if;
+            end loop;
+            file_close(f);
+            report "stmi_large_slave_model: " & INIT_FILE & " loaded (" & integer'image(line_ix) & " lines of 32 bytes)" severity note;
+        end procedure load_init_file;
     begin
+        if not init_done then
+            init_done := true;
+            if INIT_FILE /= "" then
+                load_init_file;
+            end if;
+        end if;
+
         if clk'event and clk = '1' then
             for i in intMemArray'range(1) loop
                 if (i + 1) * storeTypeWidth - 1 < wdata'length then
